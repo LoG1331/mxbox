@@ -1,0 +1,55 @@
+{
+  "name": "@log1331/mxbox",
+  "version": "1.0.0",
+  "description": "Self-hosted email server dashboard — web UI + API backend in one package",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "mxbox": "bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "bundle/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run frontend:build",
+    "build:bundle": "node scripts/build-bundle.mjs",
+    "prepack": "npm run build && npm run build:bundle",
+    "dev": "./scripts/run-dev-stack.sh",
+    "env:init": "node scripts/generate-env-secrets.mjs",
+    "start": "./scripts/run-server-start.sh",
+    "server:dev": "./scripts/run-server-dev.sh",
+    "server:start": "./scripts/run-server-start.sh",
+    "server:test": "node server/scripts/smoke-test.mjs",
+    "server:openapi": "node server/scripts/validate-openapi.mjs",
+    "frontend:dev": "./scripts/run-frontend-dev.sh",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:lint": "npm --prefix frontend run lint",
+    "test": "npm run server:test && npm run server:openapi"
+  },
+  "keywords": [
+    "mail",
+    "email-server",
+    "self-hosted",
+    "dashboard"
+  ],
+  "author": "",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
+    "helmet": "^8.1.0",
+    "html-to-text": "^9.0.5",
+    "postal-mime": "^2.6.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.2",
+    "wrangler": "^4.55.0"
+  }
+}
