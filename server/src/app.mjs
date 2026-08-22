@@ -182,8 +182,8 @@ function createFrontendMiddleware(config) {
 export function createApp(config) {
     const app = express();
 
-    if (config.trustProxy) {
-        app.set('trust proxy', 1);
+    if (config.trustProxy !== false) {
+        app.set('trust proxy', config.trustProxy);
     }
 
     app.disable('x-powered-by');

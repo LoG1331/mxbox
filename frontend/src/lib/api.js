@@ -352,6 +352,13 @@ export function pruneEmails(token, payload) {
   })
 }
 
+export function clearEmails(token) {
+  return request('/v1/maintenance/clear-emails', {
+    method: 'POST',
+    token,
+  })
+}
+
 export function getTelegramSettings(token) {
   return request('/v1/system/telegram', { token })
 }

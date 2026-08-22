@@ -30,6 +30,32 @@ function parseList(value) {
         .filter(Boolean);
 }
 
+// Default to trusting only loopback proxies: the common deployment is a
+// reverse proxy on the same host, and express-rate-limit throws when
+// X-Forwarded-For arrives while trust proxy is false. Remote-sent XFF is
+// ignored with this setting, so rate limiting cannot be bypassed.
+function parseTrustProxy(value) {
+    const normalized = String(value ?? '').trim();
+    if (!normalized) {
+        return 'loopback';
+    }
+
+    const lowered = normalized.toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(lowered)) {
+        return true;
+    }
+
+    if (['0', 'false', 'no', 'off'].includes(lowered)) {
+        return false;
+    }
+
+    if (/^\d+$/.test(normalized)) {
+        return Number.parseInt(normalized, 10);
+    }
+
+    return normalized; // IP / CIDR / list, interpreted by Express
+}
+
 function cleanText(value) {
     return String(value || '').trim();
 }
@@ -70,7 +96,7 @@ export function loadConfig(env = process.env) {
             max: 5 * 1024 * 1024
         }),
         corsAllowedOrigins: parseList(env.CORS_ALLOWED_ORIGINS),
-        trustProxy: parseBoolean(env.TRUST_PROXY, false),
+        trustProxy: parseTrustProxy(env.TRUST_PROXY),
         autoCreateDomainsOnIngress: parseBoolean(env.AUTO_CREATE_DOMAINS_ON_INGEST, false),
         storeRawMime: parseBoolean(env.STORE_RAW_MIME, true),
         rawMimeRetentionDays: parseInteger(env.RAW_MIME_RETENTION_DAYS, 30, { min: 0, max: 3650 }),

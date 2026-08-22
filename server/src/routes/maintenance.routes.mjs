@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../utils/async-handler.mjs';
 import { getStorageStats } from '../db/index.mjs';
 import { assertSuperAdmin } from '../services/account-service.mjs';
-import { pruneEmails, pruneStoredRawMime } from '../services/email-service.mjs';
+import { clearAllEmails, pruneEmails, pruneStoredRawMime } from '../services/email-service.mjs';
 
 const pruneEmailsSchema = z.object({
     olderThanDays: z.union([z.number().int().min(0), z.string().min(1)]),
@@ -27,6 +27,16 @@ export function createMaintenanceRouter(config) {
     router.post('/prune-raw-mime', asyncHandler(async (req, res) => {
         assertSuperAdmin(req.auth);
         const result = await pruneStoredRawMime(config);
+        res.json({
+            success: true,
+            ...result,
+            requestId: req.requestId
+        });
+    }));
+
+    router.post('/clear-emails', asyncHandler(async (req, res) => {
+        assertSuperAdmin(req.auth);
+        const result = await clearAllEmails(config);
         res.json({
             success: true,
             ...result,

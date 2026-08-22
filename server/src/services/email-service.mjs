@@ -937,6 +937,25 @@ export async function deleteEmailsByIds(config, emailIds) {
     };
 }
 
+export async function clearAllEmails(config) {
+    const result = await withTransaction(config, async (db) => {
+        // telegram_outbox and group_emails reference emails; delete children
+        // first (same semantics as scripts/clear-emails.mjs).
+        const outbox = await db.run(`DELETE FROM telegram_outbox`);
+        const grouped = await db.run(`DELETE FROM group_emails`);
+        const emails = await db.run(`DELETE FROM emails`);
+
+        return {
+            deletedEmails: emails.changes || 0,
+            deletedGroupLinks: grouped.changes || 0,
+            deletedOutboxRows: outbox.changes || 0
+        };
+    });
+
+    result.vacuum = await vacuumDatabase(config);
+    return result;
+}
+
 export async function pruneStoredRawMime(config) {
     return maybePruneStoredRawMime(config, { force: true });
 }

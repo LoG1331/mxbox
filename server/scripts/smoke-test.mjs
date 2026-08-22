@@ -1584,6 +1584,27 @@ async function main() {
         });
         assertStatus(ingestDisabledSubdomain, 409, 'subdomain of disabled domain rejected');
 
+        // ---------- maintenance: clear all emails ----------
+        const clearEmailsAsNonAdmin = await request(baseUrl, '/v1/maintenance/clear-emails', {
+            method: 'POST',
+            token: aliceToken
+        });
+        assertStatus(clearEmailsAsNonAdmin, 403, 'clear emails requires super admin');
+
+        const clearAllEmails = await request(baseUrl, '/v1/maintenance/clear-emails', {
+            method: 'POST',
+            token: adminToken
+        });
+        assertStatus(clearAllEmails, 200, 'clear all emails');
+        assert.equal(clearAllEmails.body.success, true);
+        assert.ok(clearAllEmails.body.deletedEmails > 0);
+
+        const emailsAfterClear = await request(baseUrl, '/v1/emails?scope=system&limit=10', {
+            token: adminToken
+        });
+        assertStatus(emailsAfterClear, 200, 'list emails after clear');
+        assert.equal(emailsAfterClear.body.count, 0);
+
         console.log('server smoke test passed');
     } finally {
         await stopServer(server);

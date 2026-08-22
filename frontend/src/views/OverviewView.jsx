@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, Clock, Copy, Database, Eraser, Globe2, KeyRound, Loader2, Pencil, RefreshCcw, Send, Trash2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-import { changeMyPassword, getHealth, getMaintenanceStorage, pruneEmails, pruneRawMime, rotateMyApiKey, updateMe } from '../lib/api.js'
+import { changeMyPassword, clearEmails, getHealth, getMaintenanceStorage, pruneEmails, pruneRawMime, rotateMyApiKey, updateMe } from '../lib/api.js'
 import { cn, formatApiError, formatBytes, formatDateTime, formatRelativeTime, getPermissionScopeLabel, normalizeOptional } from '../lib/format.js'
 import { AutoRefreshButton, Badge, Button, Checkbox, CodeBlock, Field, Input, MetricCard, ModalShell, Panel } from '../components/ui.jsx'
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
@@ -145,6 +145,8 @@ export default function OverviewView({
   const [generatedApiKey, setGeneratedApiKey] = useState('')
   const [pruneEmailForm, setPruneEmailForm] = useState(createPruneEmailsForm)
   const [lastPruneResult, setLastPruneResult] = useState(null)
+  const [clearEmailsModalOpen, setClearEmailsModalOpen] = useState(false)
+  const [clearingEmails, setClearingEmails] = useState(false)
 
   const domainSummaries = useMemo(
     () => buildDomainSummaries(accessibleDomains, account.permissions),
@@ -407,6 +409,25 @@ export default function OverviewView({
       toast.error(formatApiError(error))
     } finally {
       setPruningEmails(false)
+    }
+  }
+
+  async function handleClearEmails() {
+    setClearingEmails(true)
+
+    try {
+      const result = await clearEmails(token)
+      await loadStorage({
+        showLoading: false,
+        showError: false,
+      })
+      setClearEmailsModalOpen(false)
+      setLastPruneResult(null)
+      toast.success(`Deleted ${result.deletedEmails} emails`)
+    } catch (error) {
+      toast.error(formatApiError(error))
+    } finally {
+      setClearingEmails(false)
     }
   }
 
@@ -807,6 +828,15 @@ export default function OverviewView({
                   >
                     Reset
                   </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    icon={Trash2}
+                    onClick={() => setClearEmailsModalOpen(true)}
+                  >
+                    Clear All Emails
+                  </Button>
                 </div>
 
                 {lastPruneResult ? (
@@ -901,6 +931,29 @@ export default function OverviewView({
             </Button>
           </div>
         </form>
+      </ModalShell>
+
+      <ModalShell
+        open={clearEmailsModalOpen}
+        onClose={() => setClearEmailsModalOpen(false)}
+        title="Clear All Emails"
+        tone="ember"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-300">
+            This permanently deletes <span className="font-bold text-white">every stored email</span>, including
+            group links and pending Telegram notifications. Registered mailboxes and domains are kept.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="danger" icon={Trash2} loading={clearingEmails} onClick={() => void handleClearEmails()}>
+              Delete Everything
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setClearEmailsModalOpen(false)} disabled={clearingEmails}>
+              Cancel
+            </Button>
+          </div>
+        </div>
       </ModalShell>
 
       <ModalShell
