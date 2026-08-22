@@ -1,6 +1,6 @@
 {
   "name": "@log1331/mxbox",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Self-hosted email server dashboard — web UI + API backend in one package",
   "type": "module",
   "license": "MIT",

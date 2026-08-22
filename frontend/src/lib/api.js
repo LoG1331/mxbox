@@ -218,6 +218,14 @@ export function getDomain(token, domain) {
   return request(`/v1/domains/${encodeURIComponent(domain)}`, { token })
 }
 
+export function updateDomain(token, domain, payload) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
 export function deleteDomain(token, domain) {
   return request(`/v1/domains/${encodeURIComponent(domain)}`, {
     method: 'DELETE',

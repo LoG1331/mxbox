@@ -13,7 +13,8 @@ import {
     createDomain,
     deleteDomain,
     getDomain,
-    listDomains
+    listDomains,
+    updateDomain
 } from '../services/domain-service.mjs';
 
 const domainSchema = z.string().trim().min(1).refine(value => isValidDomain(value), {
@@ -24,6 +25,15 @@ const domainCreateSchema = z.object({
     domain: domainSchema,
     description: z.string().optional(),
     isDefault: z.boolean().optional()
+});
+
+const allowedSubdomainsSchema = z.union([
+    z.null(),
+    z.array(z.string().trim().min(1))
+]);
+
+const domainPatchSchema = z.object({
+    allowedSubdomains: allowedSubdomainsSchema.optional()
 });
 
 export function createDomainsRouter(config) {
@@ -66,6 +76,17 @@ export function createDomainsRouter(config) {
         await ensureDomainPermission(config, req.auth, req.params.domain, 'view');
         const domain = await getDomain(config, req.params.domain);
         res.json({
+            domain,
+            requestId: req.requestId
+        });
+    }));
+
+    router.patch('/:domain', asyncHandler(async (req, res) => {
+        assertSuperAdmin(req.auth);
+        const payload = domainPatchSchema.parse(req.body ?? {});
+        const domain = await updateDomain(config, req.params.domain, payload);
+        res.json({
+            success: true,
             domain,
             requestId: req.requestId
         });

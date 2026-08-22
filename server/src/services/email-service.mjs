@@ -2,7 +2,7 @@ import { maybePruneStoredRawMime, getDb, vacuumDatabase, withTransaction } from 
 import { hasGlobalPermission } from './account-service.mjs';
 import { findBlockingRuleTx, recordBlockedSenderHitTx } from './blocked-sender-service.mjs';
 import { enqueueInboundEmailNotification, processTelegramOutbox } from '../telegram/notifications.mjs';
-import { normalizeDomain, parseEmailAddress, parseEnvelopeAddress, domainAncestors } from '../utils/email.mjs';
+import { normalizeDomain, parseEmailAddress, parseEnvelopeAddress, domainAncestors, isSubdomainAllowed } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
 import { decodeCursor, encodeCursor } from '../utils/cursor.mjs';
 
@@ -483,6 +483,10 @@ async function getDomainForIngress(db, config, domainName) {
 
         if (!current.inbound_enabled) {
             throw new HttpError(409, 'Inbound is disabled for this domain');
+        }
+
+        if (!isSubdomainAllowed(current, normalizedDomain)) {
+            throw new HttpError(422, 'Subdomain is not allowed for this domain');
         }
 
         return current;

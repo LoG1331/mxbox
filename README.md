@@ -14,6 +14,7 @@ Key features:
 
 - **Inbound email over HTTP** — authenticated `POST /v1/inbound/email` endpoint that accepts raw MIME from the edge forwarder
 - **Wildcard subdomains** — a registered domain receives mail for all of its subdomains (`user@abc.example.com`, `user@foo.bar.example.com`); the exact recipient is preserved while permissions and blocked senders are enforced on the parent domain
+- **Subdomain restrictions** — per domain, `allowedSubdomains` limits which subdomains may receive mail or be registered (e.g. only `crm`); `null` keeps the wildcard default. Managed from the Domains page or `PATCH /v1/domains/:domain`
 - **Web dashboard** — React 19 SPA (Vite + Tailwind 4) with Overview, My Mail, System Mail, Domains, Blocked Senders, Users, Permissions, Admins, and Telegram Bot pages
 - **Domain-first permission model** — global super admins, plus per-user permissions scoped to individual domains
 - **Mailbox registration** — users claim mailboxes (`email_registers`); "My Mail" only shows mail for mailboxes you registered, and each mailbox can belong to exactly one user

@@ -46,6 +46,21 @@ async function rebuildPermissionsTableIfNeeded(db) {
     `);
 }
 
+async function addAllowedSubdomainsColumnIfNeeded(db) {
+    const columns = await db.all(`PRAGMA table_info(domains)`);
+    if (!columns.length) {
+        return;
+    }
+
+    if (columns.some((column) => column.name === 'allowed_subdomains')) {
+        return;
+    }
+
+    // NULL = accept every subdomain (legacy behavior); JSON array of labels
+    // restricts the domain to those subdomains (see domain-service).
+    await db.exec(`ALTER TABLE domains ADD COLUMN allowed_subdomains TEXT`);
+}
+
 async function initializeDatabase(config) {
     await mkdir(path.dirname(config.sqlitePath), { recursive: true });
 
@@ -206,6 +221,7 @@ async function initializeDatabase(config) {
     `);
 
     await rebuildPermissionsTableIfNeeded(db);
+    await addAllowedSubdomainsColumnIfNeeded(db);
 
     await db.exec(`
         CREATE INDEX IF NOT EXISTS idx_domains_status ON domains (status, name);

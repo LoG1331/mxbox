@@ -450,6 +450,16 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "allowedSubdomains": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "null = accept every subdomain; array restricts to listed subdomains (each entry also covers its own subdomains)"
           }
         }
       },
@@ -2667,6 +2677,78 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SimpleSuccessResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Domains"
+        ],
+        "summary": "Update domain",
+        "description": "Global admin only. Set allowedSubdomains (null = wildcard).",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyAuthScheme": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "allowedSubdomains": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Domain updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "domain": {
+                      "$ref": "#/components/schemas/Domain"
+                    },
+                    "requestId": {
+                      "$ref": "#/components/schemas/RequestId"
+                    }
+                  }
                 }
               }
             }

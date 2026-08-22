@@ -410,14 +410,14 @@ async function main() {
         });
         assertStatus(createDuplicateDomain, 409, 'duplicate domain create rejected');
 
-        const patchDomainRemoved = await request(baseUrl, '/v1/domains/example.com', {
+        const patchMissingDomain = await request(baseUrl, '/v1/domains/missing.test', {
             method: 'PATCH',
             token: adminToken,
             json: {
-                description: 'No longer supported'
+                allowedSubdomains: ['x']
             }
         });
-        assertStatus(patchDomainRemoved, 404, 'domain patch removed');
+        assertStatus(patchMissingDomain, 404, 'domain patch on missing domain rejected');
 
         const createInvalidDomain = await request(baseUrl, '/v1/domains', {
             method: 'POST',
@@ -1583,6 +1583,109 @@ async function main() {
             }
         });
         assertStatus(ingestDisabledSubdomain, 409, 'subdomain of disabled domain rejected');
+
+        // ---------- allowed-subdomains restriction ----------
+        const restrictDomain = await request(baseUrl, '/v1/domains/example.com', {
+            method: 'PATCH',
+            token: adminToken,
+            json: { allowedSubdomains: ['crm'] }
+        });
+        assertStatus(restrictDomain, 200, 'restrict domain to crm subdomain');
+        assert.deepEqual(restrictDomain.body.domain.allowedSubdomains, ['crm']);
+
+        const ingestAllowedSubdomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@crm.example.com',
+                subject: 'Allowed subdomain',
+                messageId: 'smoke-allow-1@example.net',
+                text: 'Should be stored'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@crm.example.com',
+                'X-Email-Envelope-From': 'sender@example.net'
+            }
+        });
+        assertStatus(ingestAllowedSubdomain, 202, 'listed subdomain accepted');
+
+        const ingestDeepAllowedSubdomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@x.crm.example.com',
+                subject: 'Deep allowed subdomain',
+                messageId: 'smoke-allow-2@example.net',
+                text: 'Should be stored'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@x.crm.example.com',
+                'X-Email-Envelope-From': 'sender@example.net'
+            }
+        });
+        assertStatus(ingestDeepAllowedSubdomain, 202, 'subdomain of listed subdomain accepted');
+
+        const ingestUnlistedSubdomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@ops.example.com',
+                subject: 'Unlisted subdomain',
+                messageId: 'smoke-allow-3@example.net',
+                text: 'Should be rejected'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@ops.example.com',
+                'X-Email-Envelope-From': 'sender@example.net'
+            }
+        });
+        assertStatus(ingestUnlistedSubdomain, 422, 'unlisted subdomain rejected');
+
+        const registerUnlistedMailbox = await request(baseUrl, '/v1/email-registers', {
+            method: 'POST',
+            token: adminToken,
+            json: { emailAddress: 'someone@ops.example.com' }
+        });
+        assertStatus(registerUnlistedMailbox, 422, 'register mailbox on unlisted subdomain rejected');
+
+        const newMailUnlisted = await request(baseUrl, '/v1/email-registers/new-mail?domain=ops.example.com', {
+            token: adminToken
+        });
+        assertStatus(newMailUnlisted, 422, 'new-mail under unlisted subdomain rejected');
+
+        const newMailListed = await request(baseUrl, '/v1/email-registers/new-mail?domain=crm.example.com', {
+            token: adminToken
+        });
+        assertStatus(newMailListed, 200, 'new-mail under listed subdomain accepted');
+        assert.match(newMailListed.body.registration.emailAddress, /@crm\.example\.com$/);
+
+        const unrestricted = await request(baseUrl, '/v1/domains/example.com', {
+            method: 'PATCH',
+            token: adminToken,
+            json: { allowedSubdomains: null }
+        });
+        assertStatus(unrestricted, 200, 'remove restriction');
+        assert.equal(unrestricted.body.domain.allowedSubdomains, null);
+
+        const ingestAfterUnrestrict = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@ops.example.com',
+                subject: 'Unrestricted again',
+                messageId: 'smoke-allow-4@example.net',
+                text: 'Should be stored'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@ops.example.com',
+                'X-Email-Envelope-From': 'sender@example.net'
+            }
+        });
+        assertStatus(ingestAfterUnrestrict, 202, 'wildcard restored after clearing list');
 
         // ---------- maintenance: clear all emails ----------
         const clearEmailsAsNonAdmin = await request(baseUrl, '/v1/maintenance/clear-emails', {

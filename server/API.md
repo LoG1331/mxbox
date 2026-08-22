@@ -334,6 +334,25 @@ This route is create-only. If the domain already exists, it returns `409`.
 
 The user must have permission on that domain or be an admin.
 
+### `PATCH /v1/domains/:domain`
+
+Admin only. Body:
+
+```json
+{
+  "allowedSubdomains": ["crm", "ops"]
+}
+```
+
+Controls which subdomains the domain accepts:
+
+- `null` (or omitted field) — wildcard: the domain accepts mail for **every** subdomain (default)
+- `[]` — apex only, no subdomains
+- `["crm", ...]` — only the listed subdomains; each entry also covers its own subdomains (`crm` matches `crm.example.com` and `x.crm.example.com`)
+
+The restriction applies to inbound mail, mailbox registration and `new-mail`.
+The response includes `domain.allowedSubdomains` (`null` when unrestricted).
+
 ### `DELETE /v1/domains/:domain`
 
 Admin only.

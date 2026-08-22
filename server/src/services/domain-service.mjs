@@ -10,6 +10,19 @@ function cleanText(value) {
     return String(value ?? '').trim();
 }
 
+function parseAllowedSubdomains(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    try {
+        const list = JSON.parse(value);
+        return Array.isArray(list) ? list : null;
+    } catch {
+        return null;
+    }
+}
+
 function mapDomainRow(row) {
     return {
         id: row.id,
@@ -18,6 +31,7 @@ function mapDomainRow(row) {
         status: row.status,
         inboundEnabled: Boolean(row.inbound_enabled),
         isDefault: Boolean(row.is_default),
+        allowedSubdomains: parseAllowedSubdomains(row.allowed_subdomains),
         counts: {
             permissionCount: row.permission_count || 0,
             emails: row.email_count || 0
@@ -205,6 +219,64 @@ export async function createDomain(config, payload) {
     });
 
     return getDomain(config, domain);
+}
+
+// Normalize the allowed-subdomains list for storage. null = wildcard (accept
+// every subdomain); an array of labels restricts the domain to those
+// subdomains (each entry also covers its own subdomains). Entries are
+// hostname-label chains ('crm', 'x.crm'), lowercased and deduped.
+const SUBDOMAIN_ENTRY_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))*$/i;
+
+export function normalizeAllowedSubdomains(value) {
+    if (value === undefined || value === null) {
+        return null;
+    }
+
+    if (!Array.isArray(value)) {
+        throw new HttpError(400, 'allowedSubdomains must be an array of labels');
+    }
+
+    const labels = [...new Set(
+        value
+            .map(item => String(item || '').trim().toLowerCase())
+            .filter(Boolean)
+    )];
+
+    for (const label of labels) {
+        if (!SUBDOMAIN_ENTRY_RE.test(label)) {
+            throw new HttpError(400, `Invalid subdomain label: ${label}`);
+        }
+    }
+
+    return labels;
+}
+
+export async function updateDomain(config, domainName, payload) {
+    const normalizedDomain = normalizeDomain(domainName);
+    if (!normalizedDomain) {
+        throw new HttpError(400, 'Valid domain is required');
+    }
+
+    const timestamp = nowIso();
+
+    await withTransaction(config, async (db) => {
+        const domain = await getDomainRecord(db, normalizedDomain);
+
+        if (payload.allowedSubdomains !== undefined) {
+            const list = normalizeAllowedSubdomains(payload.allowedSubdomains);
+            await db.run(
+                `
+                    UPDATE domains
+                    SET allowed_subdomains = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                `,
+                [list === null ? null : JSON.stringify(list), timestamp, domain.id]
+            );
+        }
+    });
+
+    return getDomain(config, normalizedDomain);
 }
 
 export async function deleteDomain(config, domainName) {

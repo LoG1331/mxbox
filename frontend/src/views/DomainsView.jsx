@@ -6,6 +6,7 @@ import {
   deleteDomain,
   getDomain,
   listDomains,
+  updateDomain,
 } from '../lib/api.js'
 import { cn, findIssueMessage, formatApiError, formatDateTime, truncate } from '../lib/format.js'
 import { clampOffset } from '../lib/pagination.js'
@@ -103,6 +104,10 @@ function DomainDetailModal({
   canDelete,
   deletingDomain,
   error,
+  subdomainsValue,
+  savingSubdomains,
+  onSubdomainsChange,
+  onSaveSubdomains,
   onDeleteDomain,
   onClose,
 }) {
@@ -137,6 +142,33 @@ function DomainDetailModal({
               <p className="mt-2 text-sm leading-6 text-gray-300">{domain.description || 'No description'}</p>
             </div>
 
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">Allowed Subdomains</p>
+                {domain.allowedSubdomains === null
+                  ? <Badge tone="success">Wildcard — every subdomain</Badge>
+                  : domain.allowedSubdomains.length
+                    ? <Badge tone="warning">{domain.allowedSubdomains.length} restricted</Badge>
+                    : <Badge tone="danger">Apex only</Badge>}
+              </div>
+              <p className="mt-2 text-xs leading-5 text-gray-400">
+                Leave empty to accept mail for every subdomain. A comma-separated list restricts the domain
+                to those subdomains (each entry also covers its own subdomains).
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Input
+                  className="min-h-[44px] flex-1 px-4 py-2.5 text-sm"
+                  value={subdomainsValue}
+                  onChange={onSubdomainsChange}
+                  placeholder="crm, ops, x.crm"
+                  disabled={!canDelete || savingSubdomains}
+                />
+                <Button type="button" size="sm" loading={savingSubdomains} onClick={onSaveSubdomains} disabled={!canDelete}>
+                  Save
+                </Button>
+              </div>
+            </div>
+
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-white/5 pt-4">
               <Button type="button" size="sm" variant="ghost" onClick={onClose}>Close</Button>
               {canDelete ? <Button type="button" size="sm" variant="danger" icon={Trash2} loading={deletingDomain} onClick={onDeleteDomain}>Delete Domain</Button> : null}
@@ -165,6 +197,8 @@ export default function DomainsView({ token, account, accessibleDomains }) {
   const [createForm, setCreateForm] = useState(emptyDomainForm())
   const [createError, setCreateError] = useState(null)
   const [detailError, setDetailError] = useState(null)
+  const [subdomainsValue, setSubdomainsValue] = useState('')
+  const [savingSubdomains, setSavingSubdomains] = useState(false)
   const [filters, setFilters] = useState({
     limit: 50,
     offset: 0,
@@ -225,6 +259,7 @@ export default function DomainsView({ token, account, accessibleDomains }) {
     try {
       const domainResponse = await getDomain(token, domainName)
       setSelectedDomain(domainResponse.domain)
+      setSubdomainsValue((domainResponse.domain.allowedSubdomains || []).join(', '))
       return domainResponse
     } catch (error) {
       if (showError) {
@@ -287,6 +322,35 @@ export default function DomainsView({ token, account, accessibleDomains }) {
       setCreateError(error)
     } finally {
       setCreatingDomain(false)
+    }
+  }
+
+  async function handleSaveSubdomains() {
+    if (!selectedDomainName) {
+      return
+    }
+
+    setSavingSubdomains(true)
+    setDetailError(null)
+
+    const raw = subdomainsValue.trim()
+    const allowedSubdomains = raw
+      ? raw.split(',').map((item) => item.trim()).filter(Boolean)
+      : null
+
+    try {
+      const response = await updateDomain(token, selectedDomainName, { allowedSubdomains })
+      setSelectedDomain(response.domain)
+      setSubdomainsValue((response.domain.allowedSubdomains || []).join(', '))
+      toast.success(response.domain.allowedSubdomains === null
+        ? 'Subdomain restriction removed — wildcard enabled'
+        : 'Allowed subdomains saved')
+      await loadDomains(selectedDomainName, filters, { showLoading: false, showError: false })
+    } catch (error) {
+      setDetailError(error)
+      toast.error(formatApiError(error))
+    } finally {
+      setSavingSubdomains(false)
     }
   }
 
@@ -426,6 +490,10 @@ export default function DomainsView({ token, account, accessibleDomains }) {
         canDelete={account.isAdmin}
         deletingDomain={deletingDomain}
         error={detailError}
+        subdomainsValue={subdomainsValue}
+        savingSubdomains={savingSubdomains}
+        onSubdomainsChange={(event) => setSubdomainsValue(event.target.value)}
+        onSaveSubdomains={() => void handleSaveSubdomains()}
         onDeleteDomain={handleDeleteDomain}
         onClose={() => {
           setSelectedDomainName(null)

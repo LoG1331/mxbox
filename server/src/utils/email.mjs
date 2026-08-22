@@ -61,6 +61,41 @@ export function parseEnvelopeAddress(value) {
     return parseEmailAddress(value);
 }
 
+// Subdomain allowlist check. A domain row's allowed_subdomains column is:
+//   null/undefined        -> accept every subdomain (wildcard, legacy default)
+//   JSON array of labels  -> accept only those subdomains; an entry also
+//                            covers its own subdomains ('crm' matches
+//                            'crm.example.com' and 'x.crm.example.com')
+// The apex itself is always allowed.
+export function isSubdomainAllowed(domainRow, recipientDomain) {
+    const name = domainRow.name;
+    if (recipientDomain === name) {
+        return true;
+    }
+
+    if (!recipientDomain.endsWith(`.${name}`)) {
+        return false;
+    }
+
+    if (domainRow.allowed_subdomains === undefined || domainRow.allowed_subdomains === null) {
+        return true;
+    }
+
+    let list = [];
+    try {
+        list = JSON.parse(domainRow.allowed_subdomains);
+    } catch {
+        return true;
+    }
+
+    if (!Array.isArray(list)) {
+        return true;
+    }
+
+    const sub = recipientDomain.slice(0, recipientDomain.length - name.length - 1);
+    return list.some(entry => entry === sub || sub.endsWith(`.${entry}`));
+}
+
 // 'a.b.example.com' -> ['a.b.example.com', 'b.example.com', 'example.com']
 // Used for wildcard subdomain matching: a registered domain receives mail
 // for all of its subdomains; the first existing ancestor wins (longest match).

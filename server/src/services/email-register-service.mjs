@@ -1,5 +1,5 @@
 import { getDb, withTransaction } from '../db/index.mjs';
-import { buildEmailAddress, normalizeDomain, parseEmailAddress, domainAncestors } from '../utils/email.mjs';
+import { buildEmailAddress, normalizeDomain, parseEmailAddress, domainAncestors, isSubdomainAllowed } from '../utils/email.mjs';
 import { ensureMailboxPermission, hasGlobalPermission } from './account-service.mjs';
 import { assertRegisteredMailboxPermission } from './email-service.mjs';
 import { HttpError } from '../utils/http.mjs';
@@ -266,7 +266,7 @@ async function getDomainForRegistrationTx(db, domainName) {
     for (const ancestor of domainAncestors(domainName)) {
         row = await db.get(
             `
-                SELECT id, name, status, inbound_enabled
+                SELECT id, name, status, inbound_enabled, allowed_subdomains
                 FROM domains
                 WHERE name = ?
                 LIMIT 1
@@ -288,6 +288,10 @@ async function getDomainForRegistrationTx(db, domainName) {
 
     if (!row.inbound_enabled) {
         throw new HttpError(409, 'Inbound is disabled for this domain');
+    }
+
+    if (!isSubdomainAllowed(row, domainName)) {
+        throw new HttpError(422, 'Subdomain is not allowed for this domain');
     }
 
     return row;
@@ -400,7 +404,7 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
         for (const ancestor of domainAncestors(normalizedRequestedDomain)) {
             domain = await db.get(
                 `
-                    SELECT id, name, status, inbound_enabled
+                    SELECT id, name, status, inbound_enabled, allowed_subdomains
                     FROM domains
                     WHERE name = ?
                     LIMIT 1
@@ -422,6 +426,10 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
 
         if (!domain.inbound_enabled) {
             throw new HttpError(409, 'Inbound is disabled for this domain');
+        }
+
+        if (!isSubdomainAllowed(domain, normalizedRequestedDomain)) {
+            throw new HttpError(422, 'Subdomain is not allowed for this domain');
         }
 
         if (!ownerIsAdmin) {
