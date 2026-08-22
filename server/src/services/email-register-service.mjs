@@ -1,5 +1,5 @@
 import { getDb, withTransaction } from '../db/index.mjs';
-import { buildEmailAddress, normalizeDomain, parseEmailAddress } from '../utils/email.mjs';
+import { buildEmailAddress, normalizeDomain, parseEmailAddress, domainAncestors } from '../utils/email.mjs';
 import { ensureMailboxPermission, hasGlobalPermission } from './account-service.mjs';
 import { assertRegisteredMailboxPermission } from './email-service.mjs';
 import { HttpError } from '../utils/http.mjs';
@@ -260,15 +260,23 @@ function mapEmailRegisterRow(row) {
 }
 
 async function getDomainForRegistrationTx(db, domainName) {
-    const row = await db.get(
-        `
-            SELECT id, name, status, inbound_enabled
-            FROM domains
-            WHERE name = ?
-            LIMIT 1
-        `,
-        [domainName]
-    );
+    // Wildcard subdomains: a mailbox under a subdomain registers against the
+    // registered ancestor domain — longest match first.
+    let row = null;
+    for (const ancestor of domainAncestors(domainName)) {
+        row = await db.get(
+            `
+                SELECT id, name, status, inbound_enabled
+                FROM domains
+                WHERE name = ?
+                LIMIT 1
+            `,
+            [ancestor]
+        );
+        if (row) {
+            break;
+        }
+    }
 
     if (!row) {
         throw new HttpError(404, 'Domain not found for email registration');
@@ -384,15 +392,25 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
     const ownerIsAdmin = await isUserAdminTx(db, ownerUserId);
 
     if (normalizedRequestedDomain) {
-        const domain = await db.get(
-            `
-                SELECT id, name, status, inbound_enabled
-                FROM domains
-                WHERE name = ?
-                LIMIT 1
-            `,
-            [normalizedRequestedDomain]
-        );
+        // Wildcard subdomains: the requested name may be a subdomain of a
+        // registered domain — resolve the ancestor (longest match first) for
+        // status/permission checks, but generate mailboxes under the
+        // requested subdomain itself.
+        let domain = null;
+        for (const ancestor of domainAncestors(normalizedRequestedDomain)) {
+            domain = await db.get(
+                `
+                    SELECT id, name, status, inbound_enabled
+                    FROM domains
+                    WHERE name = ?
+                    LIMIT 1
+                `,
+                [ancestor]
+            );
+            if (domain) {
+                break;
+            }
+        }
 
         if (!domain) {
             throw new HttpError(404, 'Domain not found for email registration');
@@ -424,7 +442,7 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
             }
         }
 
-        return [domain.name];
+        return [normalizedRequestedDomain];
     }
 
     const rows = ownerIsAdmin

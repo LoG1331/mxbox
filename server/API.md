@@ -368,7 +368,7 @@ Auth:
 
 Optional query:
 
-- `domain`: force the mailbox to be created on a specific domain
+- `domain`: force the mailbox to be created on a specific domain — subdomains of a registered domain are accepted too (e.g. `domain=abc.example.com` generates `...@abc.example.com`, checked against the parent's permissions)
 - `ownerUserId`: admins can create for another user
 
 Rules:
@@ -566,6 +566,8 @@ Worker-only route.
   - `X-Email-Worker-Name`
 
 If the sender matches a rule in `blocked_senders`, the mail is dropped: the response is still `202` with `blocked: true`, `id: null`, and `blockedBy` describing the matched rule. Returning `202` lets the worker treat it as fully processed, without retrying and without bouncing back to the sender.
+
+Wildcard subdomains: a registered domain receives mail for **all of its subdomains** — `user@abc.example.com` and `user@foo.bar.example.com` are filed under the registered `example.com` row (longest matching ancestor wins). The exact recipient is preserved (`to`/`domain` on the stored email show the subdomain), and the parent domain's permissions and blocked-sender rules apply. Mail for subdomains of an unregistered domain is rejected (`422`), or `409` when the matching ancestor is disabled/inbound-off.
 
 The frontend does not use this route.
 

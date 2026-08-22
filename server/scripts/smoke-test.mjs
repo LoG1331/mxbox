@@ -1480,6 +1480,110 @@ async function main() {
         assertStatus(listAliceRegistersAfterPermissionDelete, 200, 'list registrations after permission delete');
         assert.equal(listAliceRegistersAfterPermissionDelete.body.count, 0);
 
+        // ---------- wildcard subdomains ----------
+        // A registered domain receives mail for all of its subdomains; the
+        // exact recipient is preserved while the mail is filed under the
+        // registered parent domain.
+        const ingestSubdomainEmail = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@abc.example.com',
+                subject: 'Wildcard subdomain email',
+                messageId: 'smoke-wildcard-1@example.net',
+                text: 'Hello subdomain'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@abc.example.com',
+                'X-Email-Envelope-From': 'sender@example.net',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestSubdomainEmail, 202, 'ingest subdomain email');
+        assert.equal(ingestSubdomainEmail.body.blocked, false);
+        assert.equal(ingestSubdomainEmail.body.domain, 'example.com');
+
+        const ingestDeepSubdomainEmail = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@foo.bar.example.com',
+                subject: 'Deep wildcard email',
+                messageId: 'smoke-wildcard-2@example.net',
+                text: 'Hello deep subdomain'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@foo.bar.example.com',
+                'X-Email-Envelope-From': 'sender@example.net',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestDeepSubdomainEmail, 202, 'ingest deep subdomain email');
+
+        const readDeepSubdomainEmail = await request(baseUrl, `/v1/emails/${ingestDeepSubdomainEmail.body.id}`, {
+            token: adminToken
+        });
+        assertStatus(readDeepSubdomainEmail, 200, 'read deep subdomain email');
+        assert.equal(readDeepSubdomainEmail.body.email.to, 'user@foo.bar.example.com');
+        assert.equal(readDeepSubdomainEmail.body.email.domain, 'foo.bar.example.com');
+
+        const systemEmailsForParent = await request(baseUrl, '/v1/emails?scope=system&domain=example.com&limit=100', {
+            token: adminToken
+        });
+        assertStatus(systemEmailsForParent, 200, 'system emails filtered by parent domain');
+        assert.ok(
+            systemEmailsForParent.body.emails.some(email => email.to === 'user@abc.example.com'),
+            'parent domain filter includes subdomain mail'
+        );
+
+        const newMailUnderSubdomain = await request(baseUrl, '/v1/email-registers/new-mail?domain=abc.example.com', {
+            token: adminToken
+        });
+        assertStatus(newMailUnderSubdomain, 200, 'random mailbox under subdomain');
+        assert.equal(newMailUnderSubdomain.body.registration.domain, 'abc.example.com');
+        assert.match(newMailUnderSubdomain.body.registration.emailAddress, /@abc\.example\.com$/);
+
+        const ingestUnknownSubdomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@x.unknown.test',
+                subject: 'Unregistered subdomain',
+                messageId: 'smoke-wildcard-3@unknown.test',
+                text: 'Should be rejected'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@x.unknown.test',
+                'X-Email-Envelope-From': 'sender@example.net'
+            }
+        });
+        assertStatus(ingestUnknownSubdomain, 422, 'subdomain of unregistered domain rejected');
+
+        const newMailUnknownSubdomain = await request(baseUrl, '/v1/email-registers/new-mail?domain=x.unknown.test', {
+            token: adminToken
+        });
+        assertStatus(newMailUnknownSubdomain, 404, 'random mailbox under unregistered subdomain rejected');
+
+        const ingestDisabledSubdomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'user@sub.disabled.test',
+                subject: 'Disabled parent subdomain',
+                messageId: 'smoke-wildcard-4@disabled.test',
+                text: 'Should be rejected'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'user@sub.disabled.test',
+                'X-Email-Envelope-From': 'sender@example.net'
+            }
+        });
+        assertStatus(ingestDisabledSubdomain, 409, 'subdomain of disabled domain rejected');
+
         console.log('server smoke test passed');
     } finally {
         await stopServer(server);

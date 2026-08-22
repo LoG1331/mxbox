@@ -7,7 +7,7 @@ import {
 } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getDb, withTransaction } from '../db/index.mjs';
-import { normalizeDomain, parseEmailAddress } from '../utils/email.mjs';
+import { normalizeDomain, parseEmailAddress, domainAncestors } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
 
 const scrypt = promisify(scryptCallback);
@@ -724,7 +724,20 @@ export async function ensureMailboxPermission(config, auth, emailAddressOrParts,
     }
 
     const db = await getDb(config);
-    const domain = await getDomainRecord(db, parsedAddress.domain);
+    // Wildcard subdomains: a mailbox under a subdomain is checked against the
+    // registered ancestor domain (longest match first).
+    let domain = null;
+    for (const ancestor of domainAncestors(parsedAddress.domain)) {
+        domain = await db.get(`SELECT * FROM domains WHERE name = ? LIMIT 1`, [ancestor]);
+        if (domain) {
+            break;
+        }
+    }
+
+    if (!domain) {
+        throw new HttpError(404, 'Domain not found');
+    }
+
     if (hasGlobalPermission(auth)) {
         return {
             domain: domain.name,

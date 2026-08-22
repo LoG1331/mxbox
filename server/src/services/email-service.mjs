@@ -2,7 +2,7 @@ import { maybePruneStoredRawMime, getDb, vacuumDatabase, withTransaction } from 
 import { hasGlobalPermission } from './account-service.mjs';
 import { findBlockingRuleTx, recordBlockedSenderHitTx } from './blocked-sender-service.mjs';
 import { enqueueInboundEmailNotification, processTelegramOutbox } from '../telegram/notifications.mjs';
-import { normalizeDomain, parseEmailAddress, parseEnvelopeAddress } from '../utils/email.mjs';
+import { normalizeDomain, parseEmailAddress, parseEnvelopeAddress, domainAncestors } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
 import { decodeCursor, encodeCursor } from '../utils/cursor.mjs';
 
@@ -307,7 +307,7 @@ function buildEmailSearchSql(search, alias = 'e') {
     };
 }
 
-function buildPruneEmailsScope(options = {}) {
+async function buildPruneEmailsScope(options = {}) {
     const olderThanDays = normalizePruneOlderThanDays(options.olderThanDays);
     const conditions = [`e.received_at < datetime('now', ?)`];
     const values = [`-${olderThanDays} days`];
@@ -319,8 +319,12 @@ function buildPruneEmailsScope(options = {}) {
             throw new HttpError(400, 'Valid domain is required');
         }
 
-        conditions.push(`e.recipient_domain = ?`);
-        values.push(normalizedDomain);
+        // Filter by the registered domain row so mail stored under its
+        // subdomains (wildcard ingest) is included.
+        const db = await getDb(options.config);
+        const domainRow = await db.get(`SELECT id FROM domains WHERE name = ? LIMIT 1`, [normalizedDomain]);
+        conditions.push(`e.domain_id = ?`);
+        values.push(domainRow ? domainRow.id : -1);
     }
 
     return {
@@ -411,8 +415,11 @@ async function assertRegisteredMailboxPermission(config, auth, emailAddress, per
     const requireRegistration = options.requireRegistration !== false;
     getRequiredPermissionLevel(permission);
     const db = await getDb(config);
+    // Wildcard subdomains: permission is checked against the registered
+    // ancestor domain of the mailbox.
+    const ancestors = domainAncestors(parsedAddress.domain);
     const values = [
-        parsedAddress.domain,
+        ...ancestors,
         subjectUserId || auth?.userId || 0
     ];
     let registrationClause = '';
@@ -433,7 +440,7 @@ async function assertRegisteredMailboxPermission(config, auth, emailAddress, per
         `
             SELECT d.id
             FROM domains d
-            WHERE d.name = ?
+            WHERE d.name IN (${ancestors.map(() => '?').join(', ')})
               AND EXISTS (
                   SELECT 1
                   FROM permissions p
@@ -460,8 +467,16 @@ async function getDomainForIngress(db, config, domainName) {
         throw new HttpError(400, 'Recipient domain is missing');
     }
 
-    const current = await db.get(`SELECT * FROM domains WHERE name = ? LIMIT 1`, [normalizedDomain]);
-    if (current) {
+    // Wildcard subdomains: a registered domain receives mail for all of its
+    // subdomains — the longest matching ancestor wins. A matching but
+    // disabled domain still rejects (no fallthrough to shorter ancestors
+    // or auto-create).
+    for (const ancestor of domainAncestors(normalizedDomain)) {
+        const current = await db.get(`SELECT * FROM domains WHERE name = ? LIMIT 1`, [ancestor]);
+        if (!current) {
+            continue;
+        }
+
         if (current.status !== 'active') {
             throw new HttpError(409, 'Recipient domain is disabled');
         }
@@ -616,7 +631,7 @@ export async function ingestInboundEmail(config, payload) {
                 domain.id,
                 envelope.email,
                 envelope.localPart,
-                domain.name,
+                envelope.domain,
                 cleanText(payload.envelopeFrom),
                 payload.senderJson ? JSON.stringify(payload.senderJson) : null,
                 subject,
@@ -688,8 +703,11 @@ export async function listEmails(config, auth, filters = {}) {
             throw new HttpError(400, 'Invalid domain filter');
         }
 
-        conditions.push(`e.recipient_domain = ?`);
-        values.push(domain);
+        // Filter by the registered domain row so mail stored under its
+        // subdomains (wildcard ingest) is included.
+        const domainRow = await db.get(`SELECT id FROM domains WHERE name = ? LIMIT 1`, [domain]);
+        conditions.push(`e.domain_id = ?`);
+        values.push(domainRow ? domainRow.id : -1);
     }
 
     if (filters.address) {
@@ -924,7 +942,7 @@ export async function pruneStoredRawMime(config) {
 }
 
 export async function pruneEmails(config, options = {}) {
-    const scope = buildPruneEmailsScope(options);
+    const scope = await buildPruneEmailsScope({ ...options, config });
     const limit = normalizePruneLimit(options.limit, 5000);
     const dryRun = options.dryRun === true;
     const db = await getDb(config);

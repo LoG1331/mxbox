@@ -60,3 +60,22 @@ export function parseEmailAddress(value) {
 export function parseEnvelopeAddress(value) {
     return parseEmailAddress(value);
 }
+
+// 'a.b.example.com' -> ['a.b.example.com', 'b.example.com', 'example.com']
+// Used for wildcard subdomain matching: a registered domain receives mail
+// for all of its subdomains; the first existing ancestor wins (longest match).
+// Stops at two labels — never walks up to the TLD.
+export function domainAncestors(domain) {
+    const normalized = normalizeDomain(domain);
+    if (!normalized) {
+        return [];
+    }
+
+    const labels = normalized.split('.');
+    const ancestors = [];
+    for (let i = 0; labels.length - i >= 2; i += 1) {
+        ancestors.push(labels.slice(i).join('.'));
+    }
+
+    return ancestors;
+}
